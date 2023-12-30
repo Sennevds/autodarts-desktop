@@ -4,6 +4,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
+using System.Threading.Tasks;
+using Octokit;
 using File = System.IO.File;
 using Path = System.IO.Path;
 
@@ -60,7 +63,7 @@ namespace autodarts_desktop.control
 
 
 
-        public void LoadAppsAndProfiles()
+        public async Task LoadAppsAndProfiles()
         {
             AppsAll = new();
             AppsDownloadable = new();
@@ -75,8 +78,7 @@ namespace autodarts_desktop.control
                 try
                 {
                     var appsDownloadable = JsonConvert.DeserializeObject<List<AppDownloadable>>(File.ReadAllText(appsDownloadableFile));
-                    AppsDownloadable.AddRange(appsDownloadable);
-                    MigrateAppsDownloadable();
+                    AppsDownloadable.AddRange(appsDownloadable!);
                     AppsAll.AddRange(AppsDownloadable);
                 }
                 catch (Exception ex)
@@ -86,7 +88,7 @@ namespace autodarts_desktop.control
             }
             else
             {
-                CreateDummyAppsDownloadable();
+                await CreateDummyAppsDownloadable();
             }
 
             if (File.Exists(appsInstallableFile))
@@ -95,7 +97,6 @@ namespace autodarts_desktop.control
                 {
                     var appsInstallable = JsonConvert.DeserializeObject<List<AppInstallable>>(File.ReadAllText(appsInstallableFile));
                     AppsInstallable.AddRange(appsInstallable);
-                    MigrateAppsInstallable();
                     AppsAll.AddRange(AppsInstallable);
                 }
                 catch (Exception ex)
@@ -409,85 +410,71 @@ namespace autodarts_desktop.control
             SerializeApps(apps, appsInstallableFile);
         }
 
-        private void MigrateAppsInstallable()
-        {
-            // Define Download-Maps for Apps with os
-            var dartboardsClientDownloadMap = new DownloadMap();
-            dartboardsClientDownloadMap.WindowsX64 = "https://dartboards.online/dboclient_***VERSION***.exe";
-            //dartboardsClientDownloadMap.MacX64 = "https://dartboards.online/dboclient_***VERSION***.dmg";
-            var dartboardsClientDownloadUrl = dartboardsClientDownloadMap.GetDownloadUrlByOs("0.9.2");
 
-
-            var dartboardsClient = AppsInstallable.Find(a => a.Name == "dartboards-client");
-            if (dartboardsClient != null)
-            {
-                if (dartboardsClientDownloadUrl != null)
-                {
-                    dartboardsClient.DownloadUrl = dartboardsClientDownloadUrl;
-                }
-                else
-                {
-                    var dartboardsClientIndex = AppsInstallable.FindIndex(a => a.Name == "dartboards-client");
-                    if (dartboardsClientIndex != -1)
-                    {
-                        AppsInstallable.RemoveAt(dartboardsClientIndex);
-                    }
-                }
-            }
-
-            // Add more migs..
-        }
-
-
-        private void CreateDummyAppsDownloadable()
+        private async Task CreateDummyAppsDownloadable()
         {
             // Define os-specific download-Maps for each app
-            var autodartsClientDownloadMap = new DownloadMap();
-            autodartsClientDownloadMap.MacX64 = "https://github.com/autodarts/releases/releases/download/v***VERSION***/autodarts***VERSION***.darwin-amd64.tar.gz";
-            autodartsClientDownloadMap.MacArm64 = "https://github.com/autodarts/releases/releases/download/v***VERSION***/autodarts***VERSION***.darwin-arm64.tar.gz";
-            autodartsClientDownloadMap.LinuxX64 = "https://github.com/autodarts/releases/releases/download/v***VERSION***/autodarts***VERSION***.linux-amd64.tar.gz";
-            autodartsClientDownloadMap.LinuxArm64 = "https://github.com/autodarts/releases/releases/download/v***VERSION***/autodarts***VERSION***.linux-arm64.tar.gz";
-            autodartsClientDownloadMap.LinuxArm64 = "https://github.com/autodarts/releases/releases/download/v***VERSION***/autodarts***VERSION***.linux-armv7l.tar.gz";
-            autodartsClientDownloadMap.WindowsX64 = "https://github.com/autodarts/releases/releases/download/v***VERSION***/autodarts***VERSION***.windows-amd64.zip";
+            var autodartsClientDownloadMap = new DownloadMap
+            {
+                MacX64 = "https://github.com/autodarts/releases/releases/download/v***VERSION***/autodarts***VERSION***.darwin-amd64.opencv4.7.0.tar.gz",
+                MacArm64 = "https://github.com/autodarts/releases/releases/download/v***VERSION***/autodarts***VERSION***.darwin-arm64.opencv4.7.0.tar.gz",
+                LinuxX64 = "https://github.com/autodarts/releases/releases/download/v***VERSION***/autodarts***VERSION***.linux-amd64.tar.gz",
+                LinuxArm64 = "https://github.com/autodarts/releases/releases/download/v***VERSION***/autodarts***VERSION***.linux-arm64.tar.gz",
+                WindowsX64 = "https://github.com/autodarts/releases/releases/download/v***VERSION***/autodarts***VERSION***.windows-amd64.zip"
+            };
             var autodartsClientDownloadUrl = autodartsClientDownloadMap.GetDownloadUrlByOs("0.22.0");
+            var tag = await GetLatestCallerVersion();
+            var autodartsCallerDownloadMap = new DownloadMap
+            {
+                WindowsX64 = "https://github.com/Sennevds/autodarts-caller/releases/download/***VERSION***/autodarts-caller.exe",
+                LinuxX64 = "https://github.com/Sennevds/autodarts-caller/releases/download/***VERSION***/autodarts-caller",
+                MacX64 = "https://github.com/Sennevds/autodarts-caller/releases/download/***VERSION***/autodarts-caller-mac"
+            };
+            var autodartsCallerDownloadUrl = autodartsCallerDownloadMap.GetDownloadUrlByOs(tag);
 
-            var autodartsCallerDownloadMap = new DownloadMap();
-            autodartsCallerDownloadMap.WindowsX64 = "https://github.com/lbormann/autodarts-caller/releases/download/v***VERSION***/autodarts-caller.exe";
-            autodartsCallerDownloadMap.LinuxX64 = "https://github.com/lbormann/autodarts-caller/releases/download/v***VERSION***/autodarts-caller";
-            autodartsCallerDownloadMap.MacX64 = "https://github.com/lbormann/autodarts-caller/releases/download/v***VERSION***/autodarts-caller-mac";
-            var autodartsCallerDownloadUrl = autodartsCallerDownloadMap.GetDownloadUrlByOs("2.6.0");
-
-            var autodartsExternDownloadMap = new DownloadMap();
-            autodartsExternDownloadMap.WindowsX64 = "https://github.com/lbormann/autodarts-extern/releases/download/v***VERSION***/autodarts-extern.exe";
-            autodartsExternDownloadMap.LinuxX64 = "https://github.com/lbormann/autodarts-extern/releases/download/v***VERSION***/autodarts-extern";
-            autodartsExternDownloadMap.MacX64 = "https://github.com/lbormann/autodarts-extern/releases/download/v***VERSION***/autodarts-extern-mac";
+            var autodartsExternDownloadMap = new DownloadMap
+            {
+                WindowsX64 = "https://github.com/lbormann/autodarts-extern/releases/download/v***VERSION***/autodarts-extern.exe",
+                LinuxX64 = "https://github.com/lbormann/autodarts-extern/releases/download/v***VERSION***/autodarts-extern",
+                MacX64 = "https://github.com/lbormann/autodarts-extern/releases/download/v***VERSION***/autodarts-extern-mac"
+            };
             var autodartsExternDownloadUrl = autodartsExternDownloadMap.GetDownloadUrlByOs("1.5.4");
 
-            var autodartsWledDownloadMap = new DownloadMap();
-            autodartsWledDownloadMap.WindowsX64 = "https://github.com/lbormann/autodarts-wled/releases/download/v***VERSION***/autodarts-wled.exe";
-            autodartsWledDownloadMap.LinuxX64 = "https://github.com/lbormann/autodarts-wled/releases/download/v***VERSION***/autodarts-wled";
-            autodartsWledDownloadMap.MacX64 = "https://github.com/lbormann/autodarts-wled/releases/download/v***VERSION***/autodarts-wled-mac";
+            var autodartsWledDownloadMap = new DownloadMap
+            {
+                WindowsX64 = "https://github.com/lbormann/autodarts-wled/releases/download/v***VERSION***/autodarts-wled.exe",
+                LinuxX64 = "https://github.com/lbormann/autodarts-wled/releases/download/v***VERSION***/autodarts-wled",
+                MacX64 = "https://github.com/lbormann/autodarts-wled/releases/download/v***VERSION***/autodarts-wled-mac"
+            };
             var autodartsWledDownloadUrl = autodartsWledDownloadMap.GetDownloadUrlByOs("1.4.6");
 
-            var virtualDartsZoomDownloadMap = new DownloadMap();
-            virtualDartsZoomDownloadMap.WindowsX64 = "https://www.lehmann-bo.de/Downloads/VDZ/Virtual Darts Zoom.zip";
+            var virtualDartsZoomDownloadMap = new DownloadMap
+            {
+                WindowsX64 = "https://www.lehmann-bo.de/Downloads/VDZ/Virtual Darts Zoom.zip"
+            };
             var virtualDartsZoomDownloadUrl = virtualDartsZoomDownloadMap.GetDownloadUrlByOs();
 
-            var autodartsGifDownloadMap = new DownloadMap();
-            autodartsGifDownloadMap.WindowsX64 = "https://github.com/lbormann/autodarts-gif/releases/download/v***VERSION***/autodarts-gif.exe";
-            autodartsGifDownloadMap.LinuxX64 = "https://github.com/lbormann/autodarts-gif/releases/download/v***VERSION***/autodarts-gif";
-            autodartsGifDownloadMap.MacX64 = "https://github.com/lbormann/autodarts-gif/releases/download/v***VERSION***/autodarts-gif-mac";
+            var autodartsGifDownloadMap = new DownloadMap
+            {
+                WindowsX64 = "https://github.com/lbormann/autodarts-gif/releases/download/v***VERSION***/autodarts-gif.exe",
+                LinuxX64 = "https://github.com/lbormann/autodarts-gif/releases/download/v***VERSION***/autodarts-gif",
+                MacX64 = "https://github.com/lbormann/autodarts-gif/releases/download/v***VERSION***/autodarts-gif-mac"
+            };
             var autodartsGifDownloadUrl = autodartsGifDownloadMap.GetDownloadUrlByOs("1.0.3");
 
-            var autodartsVoiceDownloadMap = new DownloadMap();
-            autodartsVoiceDownloadMap.WindowsX64 = "https://github.com/lbormann/autodarts-voice/releases/download/v***VERSION***/autodarts-voice.exe";
-            autodartsVoiceDownloadMap.LinuxX64 = "https://github.com/lbormann/autodarts-voice/releases/download/v***VERSION***/autodarts-voice";
-            autodartsVoiceDownloadMap.MacX64 = "https://github.com/lbormann/autodarts-voice/releases/download/v***VERSION***/autodarts-voice-mac";
+            var autodartsVoiceDownloadMap = new DownloadMap
+            {
+                WindowsX64 = "https://github.com/lbormann/autodarts-voice/releases/download/v***VERSION***/autodarts-voice.exe",
+                LinuxX64 = "https://github.com/lbormann/autodarts-voice/releases/download/v***VERSION***/autodarts-voice",
+                MacX64 = "https://github.com/lbormann/autodarts-voice/releases/download/v***VERSION***/autodarts-voice-mac"
+            };
             var autodartsVoiceDownloadUrl = autodartsVoiceDownloadMap.GetDownloadUrlByOs("1.0.5");
 
-            var camLoaderDownloadMap = new DownloadMap();
-            camLoaderDownloadMap.WindowsX86 = "https://github.com/lbormann/cam-loader/releases/download/v***VERSION***/cam-loader.zip";
-            camLoaderDownloadMap.WindowsX64 = "https://github.com/lbormann/cam-loader/releases/download/v***VERSION***/cam-loader.zip";
+            var camLoaderDownloadMap = new DownloadMap
+            {
+                WindowsX86 = "https://github.com/lbormann/cam-loader/releases/download/v***VERSION***/cam-loader.zip",
+                WindowsX64 = "https://github.com/lbormann/cam-loader/releases/download/v***VERSION***/cam-loader.zip"
+            };
             var camLoaderDownloadUrl = camLoaderDownloadMap.GetDownloadUrlByOs("1.0.0");
 
 
@@ -513,7 +500,7 @@ namespace autodarts_desktop.control
                     new(
                         downloadUrl: autodartsCallerDownloadUrl,
                         name: "autodarts-caller",
-                        helpUrl: "https://github.com/lbormann/autodarts-caller",
+                        helpUrl: "https://github.com/Sennevds/autodarts-caller",
                         descriptionShort: "calls out thrown points",
                         configuration: new(
                             prefix: "-",
@@ -765,859 +752,17 @@ namespace autodarts_desktop.control
             SerializeApps(apps, appsDownloadableFile);
         }
 
-        private void MigrateAppsDownloadable()
+        private async Task<string?> GetLatestCallerVersion()
         {
-            // !!! DO NOT TOUCH THIS ANYMORE !!!!
+            var client = new GitHubClient(new ProductHeaderValue("my-cool-app"));
+
+            // var response = await new HttpClient().GetAsync("https://api.github.com/repos/Sennevds/autodarts-caller/tags");
+            
+            var releases = await client.Repository.Release.GetAll("Sennevds", "autodarts-caller");
+            var latest = releases!.MinBy(x=> x.TagName);
+            
+            return latest!.TagName;
 
-            var autodartsCaller = AppsDownloadable.Single(a => a.Name == "autodarts-caller");
-            if (autodartsCaller != null)
-            {
-                // 2. Mig (Add ValueMapping for bool)
-                foreach (var arg in autodartsCaller.Configuration.Arguments)
-                {
-                    switch (arg.Name)
-                    {
-                        case "R":
-                        case "L":
-                        case "E":
-                        case "PCC":
-                            arg.ValueMapping = new Dictionary<string, string> { ["True"] = "1", ["False"] = "0" };
-                            break;
-                    }
-                }
-
-                // 3. Mig (Set default values)
-                var wtt = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "WTT");
-                if (wtt != null && String.IsNullOrEmpty(wtt.Value)) wtt.Value = "http://localhost:8080/throw";
-
-                // 5. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v1.3.3/autodarts-caller.exe";
-
-                // 6. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v1.3.5/autodarts-caller.exe";
-
-                // 7. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v1.3.6/autodarts-caller.exe";
-
-                // 8. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v1.3.7/autodarts-caller.exe";
-
-                // 10. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v1.3.8/autodarts-caller.exe";
-
-                // 11. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v1.4.0/autodarts-caller.exe";
-
-                // 12. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v1.5.0/autodarts-caller.exe";
-
-                // 13. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v1.5.1/autodarts-caller.exe";
-
-                // 16. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v1.5.2/autodarts-caller.exe";
-
-                // 17. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v1.5.3/autodarts-caller.exe";
-
-                // 18. Mig (Adjust WTT Argument)
-                var wtt2 = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "WTT");
-                if (wtt2 != null && !String.IsNullOrEmpty(wtt2.Value)) wtt2.Value = wtt2.Value.Replace("throw", "");
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v1.5.4/autodarts-caller.exe";
-
-                // 19. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v1.5.5/autodarts-caller.exe";
-
-                // 20. Mig (WTT is multi)
-                var wtt3 = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "WTT");
-                if (wtt3 != null) wtt3.IsMulti = true;
-
-                // 26. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v1.6.0/autodarts-caller.exe";
-
-                // 27. Mig (Update download version)
-                var ambientSounds = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "A");
-                if (ambientSounds == null)
-                {
-                    autodartsCaller.Configuration.Arguments.Add(new(name: "A", type: "bool", required: false, nameHuman: "ambient-sounds", section: "Calls", valueMapping: new Dictionary<string, string> { ["True"] = "1", ["False"] = "0" }));
-                }
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v1.6.1/autodarts-caller.exe";
-
-                // 28. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v1.7.0/autodarts-caller.exe";
-
-                // 29. Mig (Update download version)
-                var ambientSounds2 = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "A");
-                if (ambientSounds2 != null)
-                {
-                    if (ambientSounds2.Value == "True")
-                    {
-                        ambientSounds2.Value = "1.0";
-                    }
-                    else if (ambientSounds2.Value == "False")
-                    {
-                        ambientSounds2.Value = "0.0";
-                    }
-                    ambientSounds2.Type = "float[0.0..1.0]";
-                    ambientSounds2.ValueMapping = null;
-                    ambientSounds2.ValidateType();
-                }
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v1.7.1/autodarts-caller.exe";
-
-                // 32. Mig (Update download version)
-                autodartsCaller.Configuration.Arguments.RemoveAll(a => a.Name == "WTT");
-                var hostPort = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "HP");
-                if (hostPort == null)
-                {
-                    autodartsCaller.Configuration.Arguments.Add(new(name: "HP", type: "int", required: false, nameHuman: "host-port", section: "Service"));
-                }
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v1.8.1/autodarts-caller.exe";
-
-                // 35. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v1.8.2/autodarts-caller.exe";
-
-
-                // 36. Mig (Update download version)
-
-                var ms = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "MS");
-                if (ms == null)
-                {
-                    autodartsCaller.Configuration.Arguments.Add(new(name: "MS", type: "path", required: false, nameHuman: "path-to-shared-sound-files", section: "Media"));
-                }
-                var caller = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "C");
-                if (caller == null)
-                {
-                    autodartsCaller.Configuration.Arguments.Add(new(name: "C", type: "string", required: false, nameHuman: "specific-caller", section: "Calls"));
-                }
-                var cpp = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "CCP");
-                if (cpp == null)
-                {
-                    autodartsCaller.Configuration.Arguments.Add(new(name: "CCP", type: "bool", required: false, nameHuman: "call-current-player", section: "Calls", valueMapping: new Dictionary<string, string> { ["True"] = "1", ["False"] = "0" }));
-                }
-                var esf = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "ESF");
-                if (esf == null)
-                {
-                    autodartsCaller.Configuration.Arguments.Add(new(name: "ESF", type: "bool", required: false, nameHuman: "call-every-dart-single-files", section: "Calls", valueMapping: new Dictionary<string, string> { ["True"] = "1", ["False"] = "0" }));
-                }
-                var pccsf = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "PCCSF");
-                if (pccsf == null)
-                {
-                    autodartsCaller.Configuration.Arguments.Add(new(name: "PCCSF", type: "bool", required: false, nameHuman: "possible-checkout-call-single-files", section: "Calls", valueMapping: new Dictionary<string, string> { ["True"] = "1", ["False"] = "0" }));
-                }
-                var acc = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "ACC");
-                if (acc == null)
-                {
-                    autodartsCaller.Configuration.Arguments.Add(new(name: "ACC", type: "bool", required: false, nameHuman: "ambient-sounds-after-calls", section: "Calls", valueMapping: new Dictionary<string, string> { ["True"] = "1", ["False"] = "0" }));
-                }
-                var dl = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "DL");
-                if (dl == null)
-                {
-                    autodartsCaller.Configuration.Arguments.Add(new(name: "DL", type: "bool", required: false, nameHuman: "downloads", section: "Downloads", valueMapping: new Dictionary<string, string> { ["True"] = "1", ["False"] = "0" }));
-                }
-                var dll = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "DLL");
-                if (dll == null)
-                {
-                    autodartsCaller.Configuration.Arguments.Add(new(name: "DLL", type: "int[0..1000]", required: false, nameHuman: "downloads-limit", section: "Downloads"));
-                }
-                var dlp = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "DLP");
-                if (dlp == null)
-                {
-                    autodartsCaller.Configuration.Arguments.Add(new(name: "DLP", type: "path", required: false, nameHuman: "downloads-path", section: "Downloads"));
-                }
-
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v2.0.0/autodarts-caller.exe";
-
-                // 37. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v2.0.1/autodarts-caller.exe";
-
-                // 38. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v2.0.2/autodarts-caller.exe";
-
-                // 39. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v2.0.3/autodarts-caller.exe";
-
-                // 40. add bav-arg
-                var bav = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "BAV");
-                if (bav == null)
-                {
-                    autodartsCaller.Configuration.Arguments.Add(new(name: "BAV", type: "float[0.0..1.0]", required: false, nameHuman: "background-audio-volume", section: "Downloads"));
-                }
-
-                // 41. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v2.0.5/autodarts-caller.exe";
-
-                // 42. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v2.0.6/autodarts-caller.exe";
-
-                // 43. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v2.0.7/autodarts-caller.exe";
-
-                // 44. Mig (Update download version)
-                autodartsCaller.Configuration.Arguments.RemoveAll(a => a.Name == "ACC");
-                var aac = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "AAC");
-                if (aac == null)
-                {
-                    autodartsCaller.Configuration.Arguments.Add(new(name: "AAC", type: "bool", required: false, nameHuman: "ambient-sounds-after-calls", section: "Calls", valueMapping: new Dictionary<string, string> { ["True"] = "1", ["False"] = "0" }));
-                }
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v2.0.8/autodarts-caller.exe";
-
-                // 47. Mig (Update download version)
-                var deb = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "DEB");
-                if (deb == null)
-                {
-                    autodartsCaller.Configuration.Arguments.Add(new(name: "DEB", type: "bool", required: false, nameHuman: "debug", section: "Service", valueMapping: new Dictionary<string, string> { ["True"] = "1", ["False"] = "0" }));
-                }
-
-                
-                var dll2 = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "DLL");
-                var ddl2Value = String.Empty;
-                if (dll2 != null)
-                {
-                    ddl2Value = dll2.Value;
-                }
-                autodartsCaller.Configuration.Arguments.RemoveAll(a => a.Name == "DLL");
-                dll2 = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "DLL");
-                if (dll2 == null)
-                {
-                    autodartsCaller.Configuration.Arguments.Add(new(name: "DLL", type: "int", required: false, nameHuman: "downloads-limit", section: "Downloads", value: ddl2Value));
-                }
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v2.0.9/autodarts-caller.exe";
-
-                // 48. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v2.0.10/autodarts-caller.exe";
-
-                // 51. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v2.0.11/autodarts-caller.exe";
-
-                // 53. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v2.0.12/autodarts-caller.exe";
-
-                // 54. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v2.0.13/autodarts-caller.exe";
-
-                // 55. Mig (Update download version)
-                autodartsCaller.DownloadUrl = "https://github.com/lbormann/autodarts-caller/releases/download/v2.0.14/autodarts-caller.exe";
-            }
-
-            var autodartsExtern = AppsDownloadable.Single(a => a.Name == "autodarts-extern");
-            if (autodartsExtern != null)
-            {
-                // 1. Mig (Update download version)
-                autodartsExtern.DownloadUrl = "https://github.com/lbormann/autodarts-extern/releases/download/v1.4.4/autodarts-extern.exe";
-
-                // 4. Mig (Set default values)
-                var hostPort = autodartsExtern.Configuration.Arguments.Find(a => a.Name == "host_port");
-                if (hostPort != null && String.IsNullOrEmpty(hostPort.Value))
-                {
-                    hostPort.Value = "8080";
-                }
-
-                var lidartsChatMessageStart = autodartsExtern.Configuration.Arguments.Find(a => a.Name == "lidarts_chat_message_start");
-                if (lidartsChatMessageStart != null && String.IsNullOrEmpty(lidartsChatMessageStart.Value))
-                {
-                    lidartsChatMessageStart.Value = "Hi, GD! Automated darts-scoring - powered by autodarts.io - Enter the community: https://discord.gg/bY5JYKbmvM";
-                }
-
-                var lidartsChatMessageEnd = autodartsExtern.Configuration.Arguments.Find(a => a.Name == "lidarts_chat_message_end");
-                if (lidartsChatMessageEnd != null && String.IsNullOrEmpty(lidartsChatMessageEnd.Value))
-                {
-                    lidartsChatMessageEnd.Value = "Thanks GG, WP!";
-                }
-
-                // 14. Mig (Update download version)
-                autodartsExtern.DownloadUrl = "https://github.com/lbormann/autodarts-extern/releases/download/v1.4.5/autodarts-extern.exe";
-
-                // 25. Mig (Update download version)
-                autodartsExtern.DownloadUrl = "https://github.com/lbormann/autodarts-extern/releases/download/v1.4.6/autodarts-extern.exe";
-
-                // 27. Mig (Update download version)
-                autodartsExtern.DownloadUrl = "https://github.com/lbormann/autodarts-extern/releases/download/v1.4.7/autodarts-extern.exe";
-
-                // 33. Mig (Update download version)
-                autodartsExtern.Configuration.Arguments.RemoveAll(a => a.Name == "host_port");
-                var connection = autodartsExtern.Configuration.Arguments.Find(a => a.Name == "connection");
-                if (connection == null)
-                {
-                    autodartsExtern.Configuration.Arguments.Add(new(name: "connection", type: "string", required: false, nameHuman: "Connection", section: "Service"));
-                }
-                autodartsExtern.DownloadUrl = "https://github.com/lbormann/autodarts-extern/releases/download/v1.5.0/autodarts-extern.exe";
-
-                // 46. Mig (Update download version)
-                autodartsExtern.DownloadUrl = "https://github.com/lbormann/autodarts-extern/releases/download/v1.5.1/autodarts-extern.exe";
-
-                // 50. Mig (Update download version)
-                autodartsExtern.DownloadUrl = "https://github.com/lbormann/autodarts-extern/releases/download/v1.5.2/autodarts-extern.exe";
-
-            }
-
-
-            // 9. Mig (Remove app)
-            var autodartsBotIndex = AppsDownloadable.FindIndex(a => a.Name == "autodarts-bot");
-            if (autodartsBotIndex != -1)
-            {
-                AppsDownloadable.RemoveAt(autodartsBotIndex);
-            }
-
-
-            // 15. Mig (Add app)
-            var autodartsWledIndex = AppsDownloadable.FindIndex(a => a.Name == "autodarts-wled");
-            if (autodartsWledIndex == -1)
-            {
-                var autodartsWledArguments = new List<Argument> {
-                    new(name: "-I", type: "string", required: false, nameHuman: "host-ip", section: "App"),
-                    new(name: "-P", type: "string", required: false, nameHuman: "host-port", section: "App"),
-                    new(name: "WEPS", type: "string", required: true, isMulti: true, nameHuman: "wled-endpoints", section: "WLED"),
-                    new(name: "HSO", type: "int[1..180]", required: false, nameHuman: "highscore-on", section: "Autodarts"),
-                    new(name: "HFO", type: "int[2..170]", required: false, nameHuman: "highfinish-on", section: "Autodarts"),
-                    new(name: "HS", type: "string", required: false, isMulti: true, nameHuman: "high-score-effects", section: "WLED"),
-                    new(name: "HF", type: "string", required: false, isMulti: true, nameHuman: "high-finish-effects", section: "WLED"),
-                    new(name: "G", type: "string", required: false, isMulti: true, nameHuman: "game-won-effects", section: "WLED"),
-                    new(name: "M", type: "string", required: false, isMulti : true, nameHuman: "match-won-effects", section: "WLED"),
-                    new(name: "B", type: "string", required: false, isMulti : true, nameHuman: "busted-effects", section: "WLED")
-                    };
-                for (int i = 0; i <= 180; i++)
-                {
-                    var score = i.ToString();
-                    Argument scoreArgument = new(name: "S" + score, type: "string", required: false, isMulti: true, nameHuman: "score " + score, section: "WLED");
-                    autodartsWledArguments.Add(scoreArgument);
-                }
-
-                AppDownloadable autodartsWledCreate =
-                    new(
-                        downloadUrl: "https://github.com/lbormann/autodarts-wled/releases/download/v1.2.1/autodarts-wled.exe",
-                        name: "autodarts-wled",
-                        helpUrl: "https://github.com/lbormann/autodarts-wled",
-                        descriptionShort: "control wled installations",
-                        configuration: new(
-                            prefix: "-",
-                            delimitter: " ",
-                            arguments: autodartsWledArguments)
-                        );
-
-                AppsDownloadable.Add(autodartsWledCreate);
-            }
-
-
-            var autodartsWled = AppsDownloadable.Single(a => a.Name == "autodarts-wled");
-            if (autodartsWled != null)
-            {
-                // 21. Remove HSO, HS -- Add A1-A12, BRI
-                autodartsWled.Configuration.Arguments.RemoveAll(a => a.Name == "HSO");
-                autodartsWled.Configuration.Arguments.RemoveAll(a => a.Name == "HS");
-
-                var bri = autodartsWled.Configuration.Arguments.Find(a => a.Name == "BRI");
-                if (bri == null)
-                {
-                    autodartsWled.Configuration.Arguments.Add(new(name: "BRI", type: "int[1..255]", required: false, nameHuman: "brightness-effects", section: "WLED"));
-                }
-
-                for (int i = 1; i <= 12; i++)
-                {
-                    var areaNumber = i.ToString();
-                    var areaX = autodartsWled.Configuration.Arguments.Find(a => a.Name == "A" + areaNumber);
-                    if (areaX == null)
-                    {
-                        Argument areaArgument = new(name: "A" + areaNumber, type: "string", required: false, isMulti: true, nameHuman: "area-" + areaNumber, section: "WLED");
-                        autodartsWled.Configuration.Arguments.Add(areaArgument);
-                    }
-                }
-
-                // 22. Mig (Update download version)
-                autodartsWled.DownloadUrl = "https://github.com/lbormann/autodarts-wled/releases/download/v1.2.3/autodarts-wled.exe";
-
-
-                // 23. Mig (Update download version)
-                var ide = autodartsWled.Configuration.Arguments.Find(a => a.Name == "IDE");
-                if (ide == null)
-                {
-                    autodartsWled.Configuration.Arguments.Add(new(name: "IDE", type: "string", required: false, nameHuman: "idle-effect", section: "WLED"));
-                }
-                autodartsWled.DownloadUrl = "https://github.com/lbormann/autodarts-wled/releases/download/v1.2.4/autodarts-wled.exe";
-
-                // 24. Mig (Update download version)
-                autodartsWled.DownloadUrl = "https://github.com/lbormann/autodarts-wled/releases/download/v1.3.0/autodarts-wled.exe";
-
-                // 28. Mig (Update download version)
-                autodartsWled.DownloadUrl = "https://github.com/lbormann/autodarts-wled/releases/download/v1.3.1/autodarts-wled.exe";
-
-                // 31. Mig (Update downloiad version)
-                var duration = autodartsWled.Configuration.Arguments.Find(a => a.Name == "DU");
-                if (duration == null)
-                {
-                    autodartsWled.Configuration.Arguments.Add(new(name: "DU", type: "int[0..10]", required: false, nameHuman: "effects-duration", section: "WLED"));
-                }
-                autodartsWled.DownloadUrl = "https://github.com/lbormann/autodarts-wled/releases/download/v1.3.2/autodarts-wled.exe";
-
-                // 34. Mig (Update download version)
-                autodartsWled.Configuration.Arguments.RemoveAll(a => a.Name == "-I");
-                autodartsWled.Configuration.Arguments.RemoveAll(a => a.Name == "-P");
-
-                var weps = autodartsWled.Configuration.Arguments.Find(a => a.Name == "WEPS");
-                if (weps != null && !String.IsNullOrEmpty(weps.Value)) weps.Value = weps.Value.Replace("http://", "").Replace("https://", "");
-
-                var connection = autodartsWled.Configuration.Arguments.Find(a => a.Name == "CON");
-                if (connection == null)
-                {
-                    autodartsWled.Configuration.Arguments.Add(new(name: "CON", type: "string", required: false, nameHuman: "Connection", section: "Service"));
-                }
-
-                var board_start_stop = autodartsWled.Configuration.Arguments.Find(a => a.Name == "BSS");
-                if (board_start_stop == null)
-                {
-                    autodartsWled.Configuration.Arguments.Add(new(name: "BSS", type: "float[0.0..10.0]", required: false, nameHuman: "board-start-stop", section: "Autodarts"));
-                }
-
-                var board_start_stop_only_start = autodartsWled.Configuration.Arguments.Find(a => a.Name == "BSSOS");
-                if (board_start_stop_only_start == null)
-                {
-                    autodartsWled.Configuration.Arguments.Add(new(name: "BSSOS", type: "bool", required: false, nameHuman: "board-start-stop-only-start", section: "Autodarts", valueMapping: new Dictionary<string, string> { ["True"] = "1", ["False"] = "0" }));
-                }
-
-                autodartsWled.DownloadUrl = "https://github.com/lbormann/autodarts-wled/releases/download/v1.4.1/autodarts-wled.exe";
-
-
-                // 45. Mig (Update download version)
-                autodartsWled.Configuration.Arguments.RemoveAll(a => a.Name == "BSSOS");
-                autodartsWled.DownloadUrl = "https://github.com/lbormann/autodarts-wled/releases/download/v1.4.2/autodarts-wled.exe";
-
-                // 49. Mig (Update download version)
-                var deb = autodartsWled.Configuration.Arguments.Find(a => a.Name == "DEB");
-                if (deb == null)
-                {
-                    autodartsWled.Configuration.Arguments.Add(new(name: "DEB", type: "bool", required: false, nameHuman: "debug", section: "Service", valueMapping: new Dictionary<string, string> { ["True"] = "1", ["False"] = "0" }));
-                }
-                autodartsWled.DownloadUrl = "https://github.com/lbormann/autodarts-wled/releases/download/v1.4.3/autodarts-wled.exe";
-
-                // 52. Mig (Update download version)
-                autodartsWled.DownloadUrl = "https://github.com/lbormann/autodarts-wled/releases/download/v1.4.4/autodarts-wled.exe";
-
-                // 56. Mig (Update download version)
-                autodartsWled.DownloadUrl = "https://github.com/lbormann/autodarts-wled/releases/download/v1.4.5/autodarts-wled.exe";
-            }
-
-            // 55. Mig (Update download version)
-            var autodartsClient = AppsDownloadable.Single(a => a.Name == "autodarts-client");
-            if (autodartsClient != null)
-            {
-                autodartsClient.DownloadUrl = "https://github.com/autodarts/releases/releases/download/v0.18.0-rc1/autodarts0.18.0-rc1.windows-amd64.zip";
-                autodartsClient.HelpUrl = "https://docs.autodarts.io/";
-
-
-                // 57. Mig (Update download version)
-                autodartsClient.DownloadUrl = "https://github.com/autodarts/releases/releases/download/v0.18.0/autodarts0.18.0.windows-amd64.zip";
-
-                // 58. Mig (Update download version)
-                autodartsClient.DownloadUrl = "https://github.com/autodarts/releases/releases/download/v0.18.1/autodarts0.18.1.windows-amd64.zip";
-            }
-
-
-            // Add more migs..
-
-
-            // Go further here!
-            MigrateAppsDownloadableSinceCrossPlatform();
-        }
-
-        private void MigrateAppsDownloadableSinceCrossPlatform()
-        {
-            // Define os-specific download-Maps for each app
-            var autodartsClientDownloadMap = new DownloadMap();
-            autodartsClientDownloadMap.MacX64 = "https://github.com/autodarts/releases/releases/download/v***VERSION***/autodarts***VERSION***.darwin-amd64.tar.gz";
-            autodartsClientDownloadMap.MacArm64 = "https://github.com/autodarts/releases/releases/download/v***VERSION***/autodarts***VERSION***.darwin-arm64.tar.gz";
-            autodartsClientDownloadMap.LinuxX64 = "https://github.com/autodarts/releases/releases/download/v***VERSION***/autodarts***VERSION***.linux-amd64.tar.gz";
-            autodartsClientDownloadMap.LinuxArm64 = "https://github.com/autodarts/releases/releases/download/v***VERSION***/autodarts***VERSION***.linux-arm64.tar.gz";
-            autodartsClientDownloadMap.LinuxArm64 = "https://github.com/autodarts/releases/releases/download/v***VERSION***/autodarts***VERSION***.linux-armv7l.tar.gz";
-            autodartsClientDownloadMap.WindowsX64 = "https://github.com/autodarts/releases/releases/download/v***VERSION***/autodarts***VERSION***.windows-amd64.zip";
-            var autodartsClientDownloadUrl = autodartsClientDownloadMap.GetDownloadUrlByOs("0.22.0");
-
-            var autodartsCallerDownloadMap = new DownloadMap();
-            autodartsCallerDownloadMap.WindowsX64 = "https://github.com/lbormann/autodarts-caller/releases/download/v***VERSION***/autodarts-caller.exe";
-            autodartsCallerDownloadMap.LinuxX64 = "https://github.com/lbormann/autodarts-caller/releases/download/v***VERSION***/autodarts-caller";
-            autodartsCallerDownloadMap.MacX64 = "https://github.com/lbormann/autodarts-caller/releases/download/v***VERSION***/autodarts-caller-mac";
-            var autodartsCallerDownloadUrl = autodartsCallerDownloadMap.GetDownloadUrlByOs("2.6.0");
-
-            var autodartsExternDownloadMap = new DownloadMap();
-            autodartsExternDownloadMap.WindowsX64 = "https://github.com/lbormann/autodarts-extern/releases/download/v***VERSION***/autodarts-extern.exe";
-            autodartsExternDownloadMap.LinuxX64 = "https://github.com/lbormann/autodarts-extern/releases/download/v***VERSION***/autodarts-extern";
-            autodartsExternDownloadMap.MacX64 = "https://github.com/lbormann/autodarts-extern/releases/download/v***VERSION***/autodarts-extern-mac";
-            var autodartsExternDownloadUrl = autodartsExternDownloadMap.GetDownloadUrlByOs("1.5.4");
-
-            var autodartsWledDownloadMap = new DownloadMap();
-            autodartsWledDownloadMap.WindowsX64 = "https://github.com/lbormann/autodarts-wled/releases/download/v***VERSION***/autodarts-wled.exe";
-            autodartsWledDownloadMap.LinuxX64 = "https://github.com/lbormann/autodarts-wled/releases/download/v***VERSION***/autodarts-wled";
-            autodartsWledDownloadMap.MacX64 = "https://github.com/lbormann/autodarts-wled/releases/download/v***VERSION***/autodarts-wled-mac";
-            var autodartsWledDownloadUrl = autodartsWledDownloadMap.GetDownloadUrlByOs("1.4.7");
-
-            var virtualDartsZoomDownloadMap = new DownloadMap();
-            virtualDartsZoomDownloadMap.WindowsX64 = "https://www.lehmann-bo.de/Downloads/VDZ/Virtual Darts Zoom.zip";
-            var virtualDartsZoomDownloadUrl = virtualDartsZoomDownloadMap.GetDownloadUrlByOs();
-
-            var autodartsGifDownloadMap = new DownloadMap();
-            autodartsGifDownloadMap.WindowsX64 = "https://github.com/lbormann/autodarts-gif/releases/download/v***VERSION***/autodarts-gif.exe";
-            autodartsGifDownloadMap.LinuxX64 = "https://github.com/lbormann/autodarts-gif/releases/download/v***VERSION***/autodarts-gif";
-            autodartsGifDownloadMap.MacX64 = "https://github.com/lbormann/autodarts-gif/releases/download/v***VERSION***/autodarts-gif-mac";
-            var autodartsGifDownloadUrl = autodartsGifDownloadMap.GetDownloadUrlByOs("1.0.3");
-
-            var camLoaderDownloadMap = new DownloadMap();
-            camLoaderDownloadMap.WindowsX86 = "https://github.com/lbormann/cam-loader/releases/download/v***VERSION***/cam-loader.zip";
-            camLoaderDownloadMap.WindowsX64 = "https://github.com/lbormann/cam-loader/releases/download/v***VERSION***/cam-loader.zip";
-            var camLoaderDownloadUrl = camLoaderDownloadMap.GetDownloadUrlByOs("1.0.0");
-
-            var autodartsVoiceDownloadMap = new DownloadMap();
-            autodartsVoiceDownloadMap.WindowsX64 = "https://github.com/lbormann/autodarts-voice/releases/download/v***VERSION***/autodarts-voice.exe";
-            autodartsVoiceDownloadMap.LinuxX64 = "https://github.com/lbormann/autodarts-voice/releases/download/v***VERSION***/autodarts-voice";
-            autodartsVoiceDownloadMap.MacX64 = "https://github.com/lbormann/autodarts-voice/releases/download/v***VERSION***/autodarts-voice-mac";
-            var autodartsVoiceDownloadUrl = autodartsVoiceDownloadMap.GetDownloadUrlByOs("1.0.5");
-
-
-
-
-            // 1. Mig (Update download version)
-            var autodartsClient = AppsDownloadable.Find(a => a.Name == "autodarts-client");
-            if (autodartsClient != null)
-            {
-                if (autodartsClientDownloadUrl != null)
-                {
-                    autodartsClient.DownloadUrl = autodartsClientDownloadUrl;
-                }
-                else
-                {
-                    var autodartsClientIndex = AppsDownloadable.FindIndex(a => a.Name == "autodarts-client");
-                    if (autodartsClientIndex != -1)
-                    {
-                        AppsDownloadable.RemoveAt(autodartsClientIndex);
-                    }
-                }
-            }
-
-            var autodartsCaller = AppsDownloadable.Find(a => a.Name == "autodarts-caller");
-            if (autodartsCaller != null)
-            {
-                if (autodartsCallerDownloadUrl != null)
-                {
-                    autodartsCaller.DownloadUrl = autodartsCallerDownloadUrl;
-
-                    var web = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "WEB");
-                    if (web == null)
-                    {
-                        autodartsCaller.Configuration.Arguments.Add(new(name: "WEB", type: "int[0..2]", required: false, nameHuman: "web-caller", section: "Service"));
-                    }
-                    var webPort = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "WEBP");
-                    if (webPort == null)
-                    {
-                        autodartsCaller.Configuration.Arguments.Add(new(name: "WEBP", type: "int", required: false, nameHuman: "web-caller-port", section: "Service"));
-                    }
-                    var randomCallerLanguage = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "RL");
-                    if (randomCallerLanguage == null)
-                    {
-                        autodartsCaller.Configuration.Arguments.Add(new(name: "RL", type: "int[0..6]", required: false, nameHuman: "random-caller-language", section: "Random"));
-                    }
-                    var randomCallerGender = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "RG");
-                    if (randomCallerGender == null)
-                    {
-                        autodartsCaller.Configuration.Arguments.Add(new(name: "RG", type: "int[0..2]", required: false, nameHuman: "random-caller-gender", section: "Random"));
-                    }
-                    var downloadsLanguage = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "DLLA");
-                    if (downloadsLanguage == null)
-                    {
-                        autodartsCaller.Configuration.Arguments.Add(new(name: "DLLA", type: "int[0..6]", required: false, nameHuman: "downloads-language", section: "Downloads"));
-                    }
-
-                    var possibleCheckoutCall = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "PCC");
-                    if (possibleCheckoutCall != null)
-                    {
-                        if (possibleCheckoutCall.Value == "True")
-                        {
-                            possibleCheckoutCall.Value = "1";
-                        }
-                        else if (possibleCheckoutCall.Value == "False")
-                        {
-                            possibleCheckoutCall.Value = "0";
-                        }
-                        possibleCheckoutCall.Type = "int";
-                        possibleCheckoutCall.ValueMapping = null;
-                        possibleCheckoutCall.ValidateType();
-                    }
-
-                    var possibleCheckoutCallOnlyYourself = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "PCCYO");
-                    if (possibleCheckoutCallOnlyYourself == null)
-                    {
-                        autodartsCaller.Configuration.Arguments.Add(new(name: "PCCYO", type: "bool", required: false, nameHuman: "possible-checkout-call-only-yourself", section: "Calls", valueMapping: new Dictionary<string, string> { ["True"] = "1", ["False"] = "0" }));
-                    }
-
-                    var webScoreboard = autodartsCaller.Configuration.Arguments.Find(a => a.Name == "WEBSB");
-                    if (webScoreboard == null)
-                    {
-                        autodartsCaller.Configuration.Arguments.Add(new(name: "WEBSB", type: "bool", required: false, nameHuman: "web-scoreboard", section: "Service", valueMapping: new Dictionary<string, string> { ["True"] = "1", ["False"] = "0" }));
-                    }
-
-                    autodartsCaller.Configuration.Arguments.RemoveAll(a => a.Name == "DLP");
-
-                }
-                else
-                {
-                    var autodartsCallerIndex = AppsDownloadable.FindIndex(a => a.Name == "autodarts-caller");
-                    if (autodartsCallerIndex != -1)
-                    {
-                        AppsDownloadable.RemoveAt(autodartsCallerIndex);
-                    }
-                }
-            }
-
-            var autodartsExtern = AppsDownloadable.Find(a => a.Name == "autodarts-extern");
-            if (autodartsExtern != null)
-            {
-                if (autodartsExternDownloadUrl != null)
-                {
-                    autodartsExtern.DownloadUrl = autodartsExternDownloadUrl;
-                }
-                else
-                {
-                    var autodartsExternIndex = AppsDownloadable.FindIndex(a => a.Name == "autodarts-extern");
-                    if (autodartsExternIndex != -1)
-                    {
-                        AppsDownloadable.RemoveAt(autodartsExternIndex);
-                    }
-                }
-            }
-
-            var autodartsWled = AppsDownloadable.Find(a => a.Name == "autodarts-wled");
-            if (autodartsWled != null)
-            {
-                if (autodartsWledDownloadUrl != null)
-                {
-                    autodartsWled.DownloadUrl = autodartsWledDownloadUrl;
-                }
-                else
-                {
-                    var autodartsWledIndex = AppsDownloadable.FindIndex(a => a.Name == "autodarts-wled");
-                    if (autodartsWledIndex != -1)
-                    {
-                        AppsDownloadable.RemoveAt(autodartsWledIndex);
-                    }
-                }
-            }
-
-            var virtualDartsZoom = AppsDownloadable.Find(a => a.Name == "virtual-darts-zoom");
-            if (virtualDartsZoom != null)
-            {
-                if (virtualDartsZoomDownloadUrl != null)
-                {
-                    virtualDartsZoom.DownloadUrl = virtualDartsZoomDownloadUrl;
-                }
-                else
-                {
-                    var virtualDartsZoomIndex = AppsDownloadable.FindIndex(a => a.Name == "virtual-darts-zoom");
-                    if (virtualDartsZoomIndex != -1)
-                    {
-                        AppsDownloadable.RemoveAt(virtualDartsZoomIndex);
-                    }
-                }
-            }
-
-            var autodartsGif = AppsDownloadable.Find(a => a.Name == "autodarts-gif");
-            if (autodartsGif != null)
-            {
-                if (autodartsGifDownloadUrl != null)
-                {
-                    autodartsGif.DownloadUrl = autodartsGifDownloadUrl;
-                }
-                else
-                {
-                    var autodartsGifIndex = AppsDownloadable.FindIndex(a => a.Name == "autodarts-gif");
-                    if (autodartsGifIndex != -1)
-                    {
-                        AppsDownloadable.RemoveAt(autodartsGifIndex);
-                    }
-                }
-            }
-            else if (autodartsGifDownloadUrl != null)
-            {
-                var autodartsGifArguments = new List<Argument> {
-                         new(name: "MP", type: "path", required: false, nameHuman: "path-to-image-files", section: "Media"),
-                         new(name: "CON", type: "string", required: false, nameHuman: "Connection", section: "Service"),
-                         new(name: "HFO", type: "int[2..170]", required: false, nameHuman: "highfinish-on", section: "Autodarts"),
-                         new(name: "HF", type: "string", required: false, isMulti: true, nameHuman: "high-finish-images", section: "Images"),
-                         new(name: "G", type: "string", required: false, isMulti: true, nameHuman: "game-won-images", section: "Images"),
-                         new(name: "M", type: "string", required: false, isMulti : true, nameHuman: "match-won-images", section: "Images"),
-                         new(name: "B", type: "string", required: false, isMulti : true, nameHuman: "busted-images", section: "Images"),
-                         new(name: "WEB", type: "int[0..2]", required: false, nameHuman: "web-gifs", section: "Service"),
-                         new(name: "DEB", type: "bool", required: false, nameHuman: "debug", section: "Service", valueMapping: new Dictionary<string, string> { ["True"] = "1", ["False"] = "0" })
-                     };
-                for (int i = 0; i <= 180; i++)
-                {
-                    var score = i.ToString();
-                    Argument scoreArgument = new(name: "S" + score, type: "string", required: false, isMulti: true, nameHuman: "score " + score, section: "Images");
-                    autodartsGifArguments.Add(scoreArgument);
-                }
-                for (int i = 1; i <= 12; i++)
-                {
-                    var areaNumber = i.ToString();
-                    Argument areaArgument = new(name: "A" + areaNumber, type: "string", required: false, isMulti: true, nameHuman: "area-" + areaNumber, section: "Images");
-                    autodartsGifArguments.Add(areaArgument);
-                }
-                
-                autodartsGif =
-                    new(
-                        downloadUrl: autodartsGifDownloadUrl,
-                        name: "autodarts-gif",
-                        helpUrl: "https://github.com/lbormann/autodarts-gif",
-                        descriptionShort: "displays your favorite gifs",
-                        configuration: new(
-                            prefix: "-",
-                            delimitter: " ",
-                            arguments: autodartsGifArguments)
-                        );
-                AppsDownloadable.Add(autodartsGif);
-            }
-
-            var camLoader = AppsDownloadable.Find(a => a.Name == "cam-loader");
-            if (camLoader != null)
-            {
-                if (camLoaderDownloadUrl != null)
-                {
-                    camLoader.DownloadUrl = camLoaderDownloadUrl;
-                }
-                else
-                {
-                    var camLoaderIndex = AppsDownloadable.FindIndex(a => a.Name == "cam-loader");
-                    if (camLoaderIndex != -1)
-                    {
-                        AppsDownloadable.RemoveAt(camLoaderIndex);
-                    }
-                }
-            }
-            else if (camLoaderDownloadUrl != null)
-            {
-                camLoader =
-                        new(
-                            downloadUrl: camLoaderDownloadUrl,
-                            name: "cam-loader",
-                            helpUrl: "https://github.com/lbormann/cam-loader",
-                            descriptionShort: "Saves and loads camera settings"
-                            );
-                AppsDownloadable.Add(camLoader);
-            }
-
-            var autodartsVoice = AppsDownloadable.Find(a => a.Name == "autodarts-voice");
-            if (autodartsVoice != null)
-            {
-                if (autodartsVoiceDownloadUrl != null)
-                {
-                    autodartsVoice.DownloadUrl = autodartsVoiceDownloadUrl;
-
-                    var keywordsNextGame = autodartsVoice.Configuration.Arguments.Find(a => a.Name == "KNG");
-                    if (keywordsNextGame == null)
-                    {
-                        autodartsVoice.Configuration.Arguments.Add(new(name: "KNG", type: "string", required: false, isMulti: true, nameHuman: "keywords-next-game", section: "Voice-Recognition"));
-                    }
-
-                    var keywordsBanCaller = autodartsVoice.Configuration.Arguments.Find(a => a.Name == "KBC");
-                    if (keywordsBanCaller == null)
-                    {
-                        autodartsVoice.Configuration.Arguments.Add(new(name: "KBC", type: "string", required: false, isMulti: true, nameHuman: "keywords-ban-caller", section: "Voice-Recognition"));
-                    }
-
-                    var keywordsChangeCaller = autodartsVoice.Configuration.Arguments.Find(a => a.Name == "KCC");
-                    if (keywordsChangeCaller == null)
-                    {
-                        autodartsVoice.Configuration.Arguments.Add(new(name: "KCC", type: "string", required: false, isMulti: true, nameHuman: "keywords-change-caller", section: "Voice-Recognition"));
-                    }
-
-                    var keywordsStartBoard = autodartsVoice.Configuration.Arguments.Find(a => a.Name == "KSB");
-                    if (keywordsStartBoard == null)
-                    {
-                        autodartsVoice.Configuration.Arguments.Add(new(name: "KSB", type: "string", required: false, isMulti: true, nameHuman: "keywords-start-board", section: "Voice-Recognition"));
-                    }
-
-                    var keywordsStopBoard = autodartsVoice.Configuration.Arguments.Find(a => a.Name == "KSPB");
-                    if (keywordsStopBoard == null)
-                    {
-                        autodartsVoice.Configuration.Arguments.Add(new(name: "KSPB", type: "string", required: false, isMulti: true, nameHuman: "keywords-stop-board", section: "Voice-Recognition"));
-                    }
-
-                    var keywordsResetBoard = autodartsVoice.Configuration.Arguments.Find(a => a.Name == "KRB");
-                    if (keywordsResetBoard == null)
-                    {
-                        autodartsVoice.Configuration.Arguments.Add(new(name: "KRB", type: "string", required: false, isMulti: true, nameHuman: "keywords-reset-board", section: "Voice-Recognition"));
-                    }
-
-                    var keywordsCalibrateBoard = autodartsVoice.Configuration.Arguments.Find(a => a.Name == "KCB");
-                    if (keywordsCalibrateBoard == null)
-                    {
-                        autodartsVoice.Configuration.Arguments.Add(new(name: "KCB", type: "string", required: false, isMulti: true, nameHuman: "keywords-calibrate-board", section: "Voice-Recognition"));
-                    }
-
-                }
-                else
-                {
-                    var autodartsVoiceIndex = AppsDownloadable.FindIndex(a => a.Name == "autodarts-voice");
-                    if (autodartsVoiceIndex != -1)
-                    {
-                        AppsDownloadable.RemoveAt(autodartsVoiceIndex);
-                    }
-                }
-            }
-            else if (autodartsVoiceDownloadUrl != null)
-            {
-                var autodartsVoiceArguments = new List<Argument> {
-                        new(name: "CON", type: "string", required: false, nameHuman: "Connection", section: "Service"),
-                        new(name: "MP", type: "path", required: true, nameHuman: "path-to-speech-model", section: "Voice-Recognition"),
-                        new(name: "L", type: "int[0..2]", required: false, nameHuman: "language", section: "Voice-Recognition"),
-                        new(name: "KN", type: "string", required: false, isMulti: true, nameHuman: "keywords-next", section: "Voice-Recognition"),
-                        new(name: "KU", type: "string", required: false, isMulti: true, nameHuman: "keywords-undo", section: "Voice-Recognition"),
-                        new(name: "KBC", type: "string", required: false, isMulti: true, nameHuman: "keywords-ban-caller", section: "Voice-Recognition"),
-                        new(name: "KCC", type: "string", required: false, isMulti: true, nameHuman: "keywords-change-caller", section: "Voice-Recognition"),
-                        new(name: "KFD", type: "string", required: false, isMulti: true, nameHuman: "keywords-first-dart", section: "Voice-Recognition"),
-                        new(name: "KSD", type: "string", required: false, isMulti: true, nameHuman: "keywords-second-dart", section: "Voice-Recognition"),
-                        new(name: "KTD", type: "string", required: false, isMulti: true, nameHuman: "keywords-third-dart", section: "Voice-Recognition"),
-                        new(name: "KS", type: "string", required: false, isMulti: true, nameHuman: "keywords-single", section: "Voice-Recognition"),
-                        new(name: "KD", type: "string", required: false, isMulti: true, nameHuman: "keywords-double", section: "Voice-Recognition"),
-                        new(name: "KT", type: "string", required: false, isMulti: true, nameHuman: "keywords-triple", section: "Voice-Recognition"),
-                        new(name: "KZERO", type: "string", required: false, isMulti: true, nameHuman: "keywords-zero", section: "Voice-Recognition"),
-                        new(name: "KONE", type: "string", required: false, isMulti: true, nameHuman: "keywords-one", section: "Voice-Recognition"),
-                        new(name: "KTWO", type: "string", required: false, isMulti: true, nameHuman: "keywords-two", section: "Voice-Recognition"),
-                        new(name: "KTHREE", type: "string", required: false, isMulti: true, nameHuman: "keywords-three", section: "Voice-Recognition"),
-                        new(name: "KFOUR", type: "string", required: false, isMulti: true, nameHuman: "keywords-four", section: "Voice-Recognition"),
-                        new(name: "KFIVE", type: "string", required: false, isMulti: true, nameHuman: "keywords-five", section: "Voice-Recognition"),
-                        new(name: "KSIX", type: "string", required: false, isMulti: true, nameHuman: "keywords-six", section: "Voice-Recognition"),
-                        new(name: "KSEVEN", type: "string", required: false, isMulti: true, nameHuman: "keywords-seven", section: "Voice-Recognition"),
-                        new(name: "KEIGHT", type: "string", required: false, isMulti: true, nameHuman: "keywords-eight", section: "Voice-Recognition"),
-                        new(name: "KNINE", type: "string", required: false, isMulti: true, nameHuman: "keywords-nine", section: "Voice-Recognition"),
-                        new(name: "KTEN", type: "string", required: false, isMulti: true, nameHuman: "keywords-ten", section: "Voice-Recognition"),
-                        new(name: "KELEVEN", type: "string", required: false, isMulti: true, nameHuman: "keywords-eleven", section: "Voice-Recognition"),
-                        new(name: "KTWELVE", type: "string", required: false, isMulti: true, nameHuman: "keywords-twelve", section: "Voice-Recognition"),
-                        new(name: "KTHIRTEEN", type: "string", required: false, isMulti: true, nameHuman: "keywords-thirteen", section: "Voice-Recognition"),
-                        new(name: "KFOURTEEN", type: "string", required: false, isMulti: true, nameHuman: "keywords-fourteen", section: "Voice-Recognition"),
-                        new(name: "KFIFTEEN", type: "string", required: false, isMulti: true, nameHuman: "keywords-fifteen", section: "Voice-Recognition"),
-                        new(name: "KSIXTEEN", type: "string", required: false, isMulti: true, nameHuman: "keywords-sixteen", section: "Voice-Recognition"),
-                        new(name: "KSEVENTEEN", type: "string", required: false, isMulti: true, nameHuman: "keywords-seventeen", section: "Voice-Recognition"),
-                        new(name: "KEIGHTEEN", type: "string", required: false, isMulti: true, nameHuman: "keywords-eighteen", section: "Voice-Recognition"),
-                        new(name: "KNINETEEN", type: "string", required: false, isMulti: true, nameHuman: "keywords-nineteen", section: "Voice-Recognition"),
-                        new(name: "KTWENTY", type: "string", required: false, isMulti: true, nameHuman: "keywords-twenty", section: "Voice-Recognition"),
-                        new(name: "KTWENTYFIVE", type: "string", required: false, isMulti: true, nameHuman: "keywords-twenty-five", section: "Voice-Recognition"),
-                        new(name: "KFIFTY", type: "string", required: false, isMulti: true, nameHuman: "keywords-fifty", section: "Voice-Recognition"),
-                        new(name: "DEB", type: "bool", required: false, nameHuman: "debug", section: "Service", valueMapping: new Dictionary<string, string> { ["True"] = "1", ["False"] = "0" })
-                    };
-
-
-                autodartsVoice =
-                    new(
-                        downloadUrl: autodartsVoiceDownloadUrl,
-                        name: "autodarts-voice",
-                        helpUrl: "https://github.com/lbormann/autodarts-voice",
-                        descriptionShort: "control autodarts by voice",
-                        configuration: new(
-                            prefix: "-",
-                            delimitter: " ",
-                            arguments: autodartsVoiceArguments)
-                        );
-                AppsDownloadable.Add(autodartsVoice);
-
-            }
-
-
-            // Add more migs..
         }
 
 

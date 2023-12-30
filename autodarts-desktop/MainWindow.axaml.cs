@@ -83,7 +83,7 @@ namespace autodarts_desktop
                 profileManager.AppInstallFailed += ProfileManager_AppInstallFailed;
                 profileManager.AppConfigurationRequired += ProfileManager_AppConfigurationRequired;
 
-                profileManager.LoadAppsAndProfiles();
+                await profileManager.LoadAppsAndProfiles();
 
                 RenderProfiles();
 
